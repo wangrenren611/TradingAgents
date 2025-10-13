@@ -104,58 +104,71 @@ TradingAgents是一个基于大语言模型的多智能体金融交易决策框�
 
 ```mermaid
 graph TD
-    A[用户输入股票代码和日期] --> B[系统初始化]
-    B --> C[数据收集阶段]
+    A[用户输入股票代码和日期] --> B[TradingAgentsGraph.propagate]
+    B --> C[创建初始状态]
+    C --> D[LangGraph工作流开始]
 
-    C --> C1[市场数据获取]
-    C --> C2[社交媒体数据获取]
-    C --> C3[新闻数据获取]
-    C --> C4[基本面数据获取]
+    D --> E[按selected_analysts顺序执行]
 
-    C1 --> D1[市场分析师]
-    C2 --> D2[社交媒体分析师]
-    C3 --> D3[新闻分析师]
-    C4 --> D4[基本面分析师]
+    E --> F{第一个分析师}
+    F -->|market| G[Market Analyst]
+    F -->|social| H[Social Media Analyst]
+    F -->|news| I[News Analyst]
+    F -->|fundamentals| J[Fundamentals Analyst]
 
-    D1 --> E[分析师报告汇总]
-    D2 --> E
-    D3 --> E
-    D4 --> E
+    G --> K[Conditional Logic: 需要工具调用?]
+    K -->|是| L[tools_market]
+    L --> G
+    K -->|否| M[Msg Clear Market]
 
-    E --> F[投资辩论阶段]
-    F --> F1[看涨研究员]
-    F1 --> F2[看跌研究员]
-    F2 --> F1
+    H --> N[Conditional Logic: 需要工具调用?]
+    N -->|是| O[tools_social]
+    O --> H
+    N -->|否| P[Msg Clear Social]
 
-    F1 --> G[研究经理]
-    F2 --> G
-    G --> H[交易员决策]
+    I --> Q[Conditional Logic: 需要工具调用?]
+    Q -->|是| R[tools_news]
+    R --> I
+    Q -->|否| S[Msg Clear News]
 
-    H --> I[风险评估阶段]
-    I --> I1[激进分析师]
-    I1 --> I2[保守分析师]
-    I2 --> I3[中性分析师]
-    I3 --> I1
+    J --> T[Conditional Logic: 需要工具调用?]
+    T -->|是| U[tools_fundamentals]
+    U --> J
+    T -->|否| V[Msg Clear Fundamentals]
 
-    I1 --> J[风险经理]
-    I2 --> J
-    I3 --> J
-    J --> K[最终交易决策]
+    M --> W[下一个分析师或Bull Researcher]
+    P --> W
+    S --> W
+    V --> X[Bull Researcher]
 
-    K --> L[执行交易/输出决策]
-    L --> M[记忆学习和反思]
+    X --> Y{辩论轮次检查}
+    Y -->|继续辩论| Z[Bear Researcher]
+    Z --> Y
+    Y -->|辩论结束| AA[Research Manager]
+
+    AA --> BB[Trader]
+    BB --> CC[Risky Analyst]
+
+    CC --> DD{风险讨论轮次检查}
+    DD -->|继续讨论| EE[Safe Analyst]
+    EE --> FF[Neutral Analyst]
+    FF --> CC
+    DD -->|讨论结束| GG[Risk Judge]
+
+    GG --> HH[最终交易决策]
+    HH --> II[返回结果]
 ```
 
 ### 流程说明
 
-1. **初始化阶段**: 接收用户输入，配置系统参数
-2. **数据收集阶段**: 并行获取多种类型的市场数据
-3. **分析阶段**: 各专业分析师进行深度分析
-4. **投资辩论阶段**: 看涨/看跌研究员进行结构化辩论
-5. **交易决策阶段**: 交易员制定具体交易计划
-6. **风险评估阶段**: 风险团队进行三方风险评估
-7. **最终决策**: 风险经理做出最终交易决策
-8. **学习反思**: 基于结果更新智能体记忆
+1. **初始化阶段**: TradingAgentsGraph接收用户输入，创建初始状态
+2. **顺序分析阶段**: 分析师按selected_analists数组顺序执行（非并行）
+3. **工具调用机制**: 每个分析师通过Conditional Logic判断是否需要调用工具
+4. **消息清理**: 每个分析师完成后通过Msg Clear节点清理消息
+5. **投资辩论阶段**: Bull Researcher和Bear Researcher进行多轮辩论
+6. **交易决策阶段**: Trader基于研究团队的分析制定交易计划
+7. **风险评估阶段**: Risky/Safe/Neutral三方进行循环讨论
+8. **最终决策**: Risk Judge做出最终交易决策并返回结果
 
 ---
 
@@ -256,10 +269,15 @@ graph TB
 sequenceDiagram
     participant User as 用户
     participant TAG as TradingAgentsGraph
+    participant LG as LangGraph
     participant MA as Market Analyst
+    participant MT as tools_market
     participant SA as Social Analyst
+    participant ST as tools_social
     participant NA as News Analyst
+    participant NT as tools_news
     participant FA as Fundamentals Analyst
+    participant FT as tools_fundamentals
     participant BR as Bull Researcher
     participant Bear as Bear Researcher
     participant RM as Research Manager
@@ -270,67 +288,101 @@ sequenceDiagram
     participant RJ as Risk Judge
 
     User->>TAG: propagate(ticker, date)
+    TAG->>TAG: 创建初始状态
+    TAG->>LG: graph.invoke(initial_state)
 
-    Note over TAG: 分析阶段
-    TAG->>MA: 市场分析请求
-    MA->>MA: 获取股票数据和技术指标
-    MA->>TAG: market_report
+    Note over LG: 分析阶段 - 顺序执行
+    LG->>MA: 执行Market Analyst
+    MA->>MA: 检查是否需要工具调用
+    alt 需要工具调用
+        MA->>MT: 调用工具 (get_stock_data, get_indicators)
+        MT->>MA: 返回数据
+        MA->>MA: 生成分析报告
+    else 无需工具调用
+        MA->>MA: 直接生成分析报告
+    end
+    MA->>LG: 返回market_report
 
-    TAG->>SA: 社交媒体分析请求
-    SA->>SA: 获取社交媒体情绪数据
-    SA->>TAG: sentiment_report
+    LG->>SA: 执行Social Media Analyst
+    SA->>SA: 检查是否需要工具调用
+    alt 需要工具调用
+        SA->>ST: 调用工具 (get_news)
+        ST->>SA: 返回数据
+        SA->>SA: 生成情绪报告
+    else 无需工具调用
+        SA->>SA: 直接生成情绪报告
+    end
+    SA->>LG: 返回sentiment_report
 
-    TAG->>NA: 新闻分析请求
-    NA->>NA: 获取新闻和内部人交易数据
-    NA->>TAG: news_report
+    LG->>NA: 执行News Analyst
+    NA->>NA: 检查是否需要工具调用
+    alt 需要工具调用
+        NA->>NT: 调用工具 (get_news, get_global_news)
+        NT->>NA: 返回数据
+        NA->>NA: 生成新闻报告
+    else 无需工具调用
+        NA->>NA: 直接生成新闻报告
+    end
+    NA->>LG: 返回news_report
 
-    TAG->>FA: 基本面分析请求
-    FA->>FA: 获取财务报表和基本面数据
-    FA->>TAG: fundamentals_report
+    LG->>FA: 执行Fundamentals Analyst
+    FA->>FA: 检查是否需要工具调用
+    alt 需要工具调用
+        FA->>FT: 调用工具 (get_fundamentals等)
+        FT->>FA: 返回数据
+        FA->>FA: 生成基本面报告
+    else 无需工具调用
+        FA->>FA: 直接生成基本面报告
+    end
+    FA->>LG: 返回fundamentals_report
 
-    Note over TAG: 投资辩论阶段
-    TAG->>BR: 开始投资辩论
-    BR->>TAG: 看涨观点
-    TAG->>Bear: 看跌反驳
-    Bear->>TAG: 看跌观点
+    Note over LG: 投资辩论阶段 - 循环执行
+    LG->>BR: 执行Bull Researcher
+    BR->>LG: 返回看涨观点
+    LG->>LG: 检查辩论轮次
 
-    loop 辩论轮次 (max_debate_rounds)
-        BR->>Bear: 看涨论证
-        Bear->>BR: 看跌论证
+    alt 继续辩论
+        LG->>Bear: 执行Bear Researcher
+        Bear->>LG: 返回看跌观点
+        LG->>LG: 检查辩论轮次
+        LG->>BR: 继续下一轮辩论
+    else 辩论结束
+        LG->>RM: 执行Research Manager
+        RM->>LG: 返回investment_plan
     end
 
-    TAG->>RM: 综合投资建议
-    RM->>TAG: investment_plan
+    Note over LG: 交易决策阶段
+    LG->>TR: 执行Trader
+    TR->>LG: 返回trader_investment_plan
 
-    Note over TAG: 交易决策阶段
-    TAG->>TR: 交易决策请求
-    TR->>TAG: trader_investment_plan
+    Note over LG: 风险评估阶段 - 三方循环
+    LG->>RA: 执行Risky Analyst
+    RA->>LG: 返回激进风险观点
+    LG->>LG: 检查风险讨论轮次
 
-    Note over TAG: 风险评估阶段
-    TAG->>RA: 开始风险评估
-    RA->>TAG: 激进风险观点
-    TAG->>SF: 保守风险观点
-    SF->>TAG: 保守风险评估
-    TAG->>NA2: 中性风险观点
-    NA2->>TAG: 中性风险评估
-
-    loop 风险讨论轮次 (max_risk_discuss_rounds)
-        RA->>SF: 激进观点
-        SF->>NA2: 保守观点
-        NA2->>RA: 中性观点
+    alt 继续风险讨论
+        LG->>SF: 执行Safe Analyst
+        SF->>LG: 返回保守风险观点
+        LG->>NA2: 执行Neutral Analyst
+        NA2->>LG: 返回中性风险观点
+        LG->>RA: 继续下一轮讨论
+    else 讨论结束
+        LG->>RJ: 执行Risk Judge
+        RJ->>LG: 返回final_trade_decision
     end
 
-    TAG->>RJ: 最终风险决策
-    RJ->>TAG: final_trade_decision
-    TAG->>User: 返回交易决策
+    LG->>TAG: 返回最终状态
+    TAG->>User: 返回决策结果
 ```
 
 ### 交互特点
 
-1. **顺序执行**: 分析师按顺序执行，确保数据完整性
-2. **循环辩论**: 研究员和风险分析师进行多轮辩论
-3. **状态传递**: 每个阶段的结果作为下一阶段的输入
-4. **记忆学习**: 智能体基于历史经验调整策略
+1. **LangGraph控制**: 整个流程由LangGraph StateGraph控制，不是TradingAgentsGraph直接调用
+2. **顺序执行**: 分析师按selected_analists数组顺序执行，非并行
+3. **条件工具调用**: 每个分析师根据需要决定是否调用工具
+4. **循环辩论**: 通过Conditional Logic控制辩论轮次和讨论流程
+5. **状态管理**: LangGraph管理AgentState的状态流转
+6. **记忆集成**: 智能体在执行过程中访问各自的记忆系统
 
 ---
 
